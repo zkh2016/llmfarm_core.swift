@@ -3965,10 +3965,25 @@ struct llm_build_context {
 
         struct ggml_tensor * cur;
         struct ggml_tensor * inpL;
-
-        inpL = llm_build_inp_embd(ctx0, hparams, batch, model.tok_embd, cb);
-        cb(inpL, "inp_embd", -1);
-
+        struct ggml_tensor * inpL_emb;
+        
+        // emb_scale
+        struct ggml_tensor * emb_scale = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, 1);
+        cb(emb_scale, "emb_scale", -1);
+        
+        // hs_scale
+        struct ggml_tensor * hs_scale = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, 1);
+        cb(hs_scale, "hs_scale", -1);
+        
+        // div_scale
+        struct ggml_tensor * div_scale = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, 1);
+        cb(div_scale, "div_scale", -1);
+        
+        inpL_emb = llm_build_inp_embd(ctx0, hparams, batch, model.tok_embd, cb);
+        cb(inpL_emb, "inp_embd", -1);
+        inpL = ggml_scale(ctx0, inpL_emb, emb_scale);
+        cb(inpL, "inpL", -1);
+      
         // inp_pos - contains the positions
         struct ggml_tensor * inp_pos = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_tokens);
         cb(inp_pos, "inp_pos", -1);
@@ -4041,6 +4056,9 @@ struct llm_build_context {
                 cb(cur, "kqv_out", il);
             }
 
+            cur = ggml_scale(ctx0, cur, hs_scale);
+            cb(cur, "hs_scale", il);
+            
             struct ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
             cb(ffn_inp, "ffn_inp", il);
 
@@ -4059,6 +4077,8 @@ struct llm_build_context {
                 cb(cur, "ffn_out", il);
             }
 
+            cur = ggml_scale(ctx0, cur, hs_scale);
+            cb(cur, "hs_scale_2", il);
             cur = ggml_add(ctx0, cur, ffn_inp);
             cb(cur, "l_out", il);
 
@@ -4073,6 +4093,8 @@ struct llm_build_context {
                 LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
 
+        cur = ggml_scale(ctx0, cur, div_scale);
+        cb(cur, "div_scale", -1);
         // lm_head
         cur = ggml_mul_mat(ctx0, model.output, cur);
         cb(cur, "result_output", -1);
@@ -5331,6 +5353,9 @@ static struct ggml_cgraph * llama_build_graph(
     bool alloc_inp_KQ_scale = false;
     bool alloc_inp_KQ_mask  = false;
     bool alloc_inp_K_shift  = false;
+    bool alloc_emb_scale = false;
+    bool alloc_div_scale = false;
+    bool alloc_hs_scale = false;
 
 #ifdef GGML_USE_CUBLAS
     const bool do_offload = true;
@@ -5405,6 +5430,34 @@ static struct ggml_cgraph * llama_build_graph(
 
             alloc_inp_KQ_scale = true;
         }
+        if (!alloc_emb_scale && strcmp(name, "emb_scale") == 0) {
+            ggml_allocr_alloc(lctx.alloc, cur);
+
+            if (!ggml_allocr_is_measure(lctx.alloc)) {
+                ggml_set_f32(cur, 12);
+            }
+
+            alloc_emb_scale = true;
+        }
+        if (!alloc_div_scale && strcmp(name, "div_scale") == 0) {
+            ggml_allocr_alloc(lctx.alloc, cur);
+
+            if (!ggml_allocr_is_measure(lctx.alloc)) {
+                ggml_set_f32(cur, 1.0 / 9.0);
+            }
+
+            alloc_div_scale = true;
+        }
+        if (!alloc_hs_scale && strcmp(name, "hs_scale") == 0) {
+            ggml_allocr_alloc(lctx.alloc, cur);
+
+            if (!ggml_allocr_is_measure(lctx.alloc)) {
+                ggml_set_f32(cur, 1.4/sqrt(40.0));
+            }
+
+            alloc_hs_scale = true;
+        }
+
 
         if (!alloc_inp_KQ_mask && strcmp(name, "KQ_mask") == 0) {
             ggml_allocr_alloc(lctx.alloc, cur);
@@ -5756,7 +5809,7 @@ static int llama_decode_internal(
     ggml_allocr_alloc_graph(lctx.alloc, gf);
 
     struct ggml_tensor * res        = gf->nodes[gf->n_nodes - 1];
-    struct ggml_tensor * embeddings = gf->nodes[gf->n_nodes - 2];
+    struct ggml_tensor * embeddings = gf->nodes[gf->n_nodes - 3];
 
     GGML_ASSERT(strcmp(res->name,        "result_output") == 0);
     GGML_ASSERT(strcmp(embeddings->name, "result_norm")   == 0);
@@ -7869,6 +7922,7 @@ static void llama_convert_tensor_internal(
     struct ggml_tensor * tensor, std::vector<no_init<float>> & output, std::vector<std::thread> & workers,
     const size_t nelements, const int nthread
 ) {
+    printf("===llama_convert_tensor_internal\n");
     if (output.size() < nelements) {
         output.resize(nelements);
     }
@@ -7876,6 +7930,7 @@ static void llama_convert_tensor_internal(
 
     ggml_type_traits_t qtype;
     if (ggml_is_quantized(tensor->type)) {
+        printf("===llama_convert_tensor_internal: ggml_is_quantized\n");
         qtype = ggml_internal_get_type_traits(tensor->type);
         if (qtype.to_float == NULL) {
             throw std::runtime_error(format("type %s unsupported for integer quantization: no dequantization available", ggml_type_name(tensor->type)));
@@ -8202,10 +8257,12 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
             float * f32_data;
 
             if (tensor->type == GGML_TYPE_F32) {
+                LLAMA_LOG_INFO("tensor->type is GGML_TYPE_F32.....\n"); 
                 f32_data = (float *) tensor->data;
             } else if (ggml_is_quantized(tensor->type) && !params->allow_requantize) {
                 throw std::runtime_error(format("requantizing from type %s is disabled", ggml_type_name(tensor->type)));
             } else {
+                LLAMA_LOG_INFO("llama_convert_tensor_internal.....\n"); 
                 llama_convert_tensor_internal(tensor, f32_conv_buf, workers, nelements, nthread);
                 f32_data = (float *) f32_conv_buf.data();
             }
@@ -8222,6 +8279,7 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
             static const int chunk_size = 32 * 512;
             const int nchunk = (nelements + chunk_size - 1)/chunk_size;
             const int nthread_use = nthread > 1 ? std::max(1, std::min(nthread, nchunk)) : 1;
+            LLAMA_LOG_INFO("nthread_use = %d\n", nthread_use);
             if (nthread_use < 2) {
                 new_size = ggml_quantize_chunk(new_type, f32_data, new_data, 0, nelements, hist_cur.data());
             } else {
@@ -9032,6 +9090,7 @@ int llama_model_quantize(
         const char * fname_inp,
         const char * fname_out,
         const llama_model_quantize_params * params) {
+    printf("=========call llama_model_quantize\n");
     try {
         llama_model_quantize_internal(fname_inp, fname_out, params);
         return 0;
