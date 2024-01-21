@@ -305,6 +305,7 @@ public class LLMBase {
         let contextLength = Int32(contextParams.context)
         print("Past token count: \(nPast)/\(contextLength) (\(past.count))")
         // Tokenize with prompt format
+        print("input: \(input)")
         var inputTokens = tokenizePrompt(input, self.contextParams.promptFormat)
         if inputTokens.count == 0{
             return "Empty input."
@@ -331,6 +332,7 @@ public class LLMBase {
                 
                 inputTokens.removeFirst(evalCount)
                 if self.nPast + Int32(inputBatch.count) >= self.contextParams.context{
+                    print("larger than context length")
                     self.nPast = 0
                     try ExceptionCather.catchException {
                         _ = try? self.llm_eval(inputBatch: [self.llm_token_eos()])
@@ -490,6 +492,7 @@ public class LLMBase {
         case .Custom:
             var formated_input = self.contextParams.custom_prompt_format.replacingOccurrences(of: "{{prompt}}", with: input)
             formated_input = formated_input.replacingOccurrences(of: "\\n", with: "\n")
+            print("tokenize input : \(formated_input)")
             return llm_tokenize(formated_input)
         // case .ChatBase:
         //     return llm_tokenize("<human>: " + input + "\n<bot>:")
