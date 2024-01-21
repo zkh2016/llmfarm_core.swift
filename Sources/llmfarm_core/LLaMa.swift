@@ -181,5 +181,11 @@ public class LLaMa: LLMBase {
         
         return embeddings
     }
+    public override func reinit_context() {
+        print("reinit context")
+        llama_free(self.context)
+        var context_params = llama_context_default_params()
+        self.context = llama_new_context_with_model(self.model, context_params)
+    }
 }
 

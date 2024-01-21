@@ -51,6 +51,7 @@ public class LLMBase {
     var past: [[ModelToken]] = [] // Will house both queries and responses in order
     //var n_history: Int32 = 0
     var nPast: Int32 = 0
+    var last_input_index : Int32 = 0
     
     
     
@@ -101,6 +102,10 @@ public class LLMBase {
             print(error)
             throw error
         }
+    }
+    
+    func reinit_context(){
+        
     }
     
     func TestMethod(){
@@ -314,6 +319,7 @@ public class LLMBase {
         let inputTokensCount = inputTokens.count
         print("Input tokens: \(inputTokens)")
         // Add new input tokens to past array
+        //last_input_index = Int32(past.count)
         past.append(inputTokens)
         // Create space in context if needed
         if inputTokensCount > contextLength {
@@ -346,6 +352,7 @@ public class LLMBase {
                 if eval_res == false{
                     throw ModelError.failedToEval
                 }
+                last_input_index = nPast
                 nPast += Int32(evalCount)
             }
             // Output
@@ -416,13 +423,19 @@ public class LLMBase {
                     // Send generated token back into model for next generation
                     var eval_res:Bool? = nil
                     if self.nPast >= self.contextParams.context - 4{
-                        self.nPast = self.nPast / 2
+                        //self.nPast = self.nPast / 2
+                        //self.nPast = last_input_index
+                        self.nPast = 0
+                        print("Context Limit!")
+                        break;
+
+                        //self.reinit_context()
                         outputToken = self.llm_token_eos()
                         try ExceptionCather.catchException {
                             _ = try? self.llm_eval(inputBatch: [outputToken])
                         }
-                        print("Context Limit!")
 //                        throw ModelError.contextLimit
+                        
                     }
                     try ExceptionCather.catchException {
                         eval_res = try? self.llm_eval(inputBatch: [outputToken])
