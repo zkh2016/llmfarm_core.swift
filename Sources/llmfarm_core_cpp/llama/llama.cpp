@@ -3353,7 +3353,7 @@ static bool llm_load_tensors(
                     // output
                     {
                         model.output_norm = ml.create_tensor(ctx_output,       tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd});
-                        model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab});
+                        //model.output      = ml.create_tensor(ctx_output_split, tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab});
                     }
 
                     for (int i = 0; i < n_layer; ++i) {
@@ -3781,7 +3781,7 @@ static bool llm_load_tensors(
         }
     }
 
-    ml.done_getting_tensors();
+   // ml.done_getting_tensors();
 
     ml.init_mapping(true, use_mlock ? &model.mlock_mmap : nullptr);
 
@@ -4556,7 +4556,9 @@ struct llm_build_context {
         cur = ggml_scale(ctx0, cur, 1.0 / 9.0);
         cb(cur, "div_scale", -1);
         // lm_head
-        cur = ggml_mul_mat(ctx0, model.output, cur);
+        //cur = ggml_mul_mat(ctx0, model.output, cur);
+        cur = ggml_mul_mat(ctx0, model.tok_embd, cur);
+
         cb(cur, "result_output", -1);
 
         ggml_build_forward_expand(gf, cur);
@@ -7551,7 +7553,7 @@ void llama_set_rng_seed(struct llama_context * ctx, uint32_t seed) {
     if (seed == LLAMA_DEFAULT_SEED) {
         seed = time(NULL);
     }
-    ctx->rng.seed(seed);
+    ctx->rng.seed(10);//seed
 }
 
 void llama_sample_softmax(struct llama_context * ctx, llama_token_data_array * candidates) {
@@ -9447,7 +9449,7 @@ struct llama_context * llama_new_context_with_model(
     LLAMA_LOG_INFO("%s: freq_base  = %.1f\n",   __func__, cparams.rope_freq_base);
     LLAMA_LOG_INFO("%s: freq_scale = %g\n",     __func__, cparams.rope_freq_scale);
 
-    ctx->rng = std::mt19937(params.seed);
+    ctx->rng = std::mt19937(10);//params.seed
     ctx->logits_all = params.logits_all;
 
     const ggml_type type_k = params.type_k;

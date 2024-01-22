@@ -61,7 +61,7 @@ public class LLMBase {
         var params = gpt_context_default_params()
         params.n_ctx = contextParams.context
         params.n_parts = contextParams.parts
-        params.seed = 0
+        params.seed = 10
         params.f16_kv = contextParams.f16Kv
         params.logits_all = contextParams.logitsAll
         params.vocab_only = contextParams.vocabOnly
@@ -426,6 +426,7 @@ public class LLMBase {
                         //self.nPast = self.nPast / 2
                         //self.nPast = last_input_index
                         self.nPast = 0
+                        self.past.removeAll()
                         print("Context Limit!")
                         break;
 

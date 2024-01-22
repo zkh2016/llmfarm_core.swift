@@ -1222,12 +1222,13 @@ static void llama_dadbed9_model_load_internal(
             }
 
             model.norm   = ml->get_tensor("norm.weight",   {n_embd},          backend_norm);
-            model.output = ml->get_tensor("output.weight", {n_embd, n_vocab}, backend_output);
+            //model.output = ml->get_tensor("output.weight", {n_embd, n_vocab}, backend_output);
             if (backend_norm == GGML_dadbed9_BACKEND_GPU) {
                 vram_weights += ggml_dadbed9_nbytes(model.norm);
             }
             if (backend_output == GGML_dadbed9_BACKEND_GPU_SPLIT) {
-                vram_weights += ggml_dadbed9_nbytes(model.output);
+                //vram_weights += ggml_dadbed9_nbytes(model.output);
+                vram_weights += ggml_dadbed9_nbytes(model.tok_embeddings);
             }
         }
 
@@ -1264,7 +1265,7 @@ static void llama_dadbed9_model_load_internal(
         }
     }
 
-    ml->done_getting_tensors();
+    //ml->done_getting_tensors();
 
     // print memory requirements
     {
@@ -1751,7 +1752,9 @@ static struct ggml_dadbed9_cgraph * llama_dadbed9_build_graph(
     }
 
     // lm_head
-    cur = ggml_dadbed9_mul_mat(ctx0, model.output, cur);
+    //cur = ggml_dadbed9_mul_mat(ctx0, model.output, cur);
+    cur = ggml_dadbed9_mul_mat(ctx0, model.tok_embeddings, cur);
+
     ggml_dadbed9_set_name(cur, "result_output");
 
     lctx.use_buf(ctx0, -1);
