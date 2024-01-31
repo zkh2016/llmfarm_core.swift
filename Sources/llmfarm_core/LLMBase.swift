@@ -61,7 +61,7 @@ public class LLMBase {
         var params = gpt_context_default_params()
         params.n_ctx = contextParams.context
         params.n_parts = contextParams.parts
-        params.seed = 10
+        params.seed = 0
         params.f16_kv = contextParams.f16Kv
         params.logits_all = contextParams.logitsAll
         params.vocab_only = contextParams.vocabOnly
@@ -306,11 +306,13 @@ public class LLMBase {
     
     
     public func predict(_ input: String, _ callback: ((String, Double) -> Bool) ) throws -> String {
+        
         let params = sampleParams
         let contextLength = Int32(contextParams.context)
         print("Past token count: \(nPast)/\(contextLength) (\(past.count))")
         // Tokenize with prompt format
         print("input: \(input)")
+        print("format \(self.contextParams.promptFormat)")
         var inputTokens = tokenizePrompt(input, self.contextParams.promptFormat)
         if inputTokens.count == 0{
             return "Empty input."
@@ -361,6 +363,7 @@ public class LLMBase {
             var output = [String]()
             // Loop until target count is reached
             var outputEnabled = true
+            //var too_long = false
             while outputEnabled {
                 // Pull a generation from context
                 var outputToken:Int32 = -1
@@ -436,7 +439,7 @@ public class LLMBase {
                             _ = try? self.llm_eval(inputBatch: [outputToken])
                         }
 //                        throw ModelError.contextLimit
-                        
+                        //too_long = true
                     }
                     try ExceptionCather.catchException {
                         eval_res = try? self.llm_eval(inputBatch: [outputToken])
@@ -449,8 +452,10 @@ public class LLMBase {
                     nPast += 1
                 }
             }
+           
             // Update past with most recent response
             past.append(outputTokens)
+            //self.nPast = 0
             print("Total tokens: \(inputTokensCount + outputTokens.count) (\(inputTokensCount) -> \(outputTokens.count))")
             print("Past token count: \(nPast)/\(contextLength) (\(past.count))")
             // Return full string for case without callback
@@ -502,7 +507,9 @@ public class LLMBase {
     public func tokenizePrompt(_ input: String, _ style: ModelPromptStyle) -> [ModelToken] {
         switch style {
         case .None:
-            return llm_tokenize(input)
+            var formated_input = input.replacingOccurrences(of: "\\n", with: "\n")
+            print("not format tokenize input : \(formated_input)")
+            return llm_tokenize(formated_input)
         case .Custom:
             var formated_input = self.contextParams.custom_prompt_format.replacingOccurrences(of: "{{prompt}}", with: input)
             formated_input = formated_input.replacingOccurrences(of: "\\n", with: "\n")

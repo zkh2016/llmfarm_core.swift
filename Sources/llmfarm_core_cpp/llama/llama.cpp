@@ -7553,7 +7553,7 @@ void llama_set_rng_seed(struct llama_context * ctx, uint32_t seed) {
     if (seed == LLAMA_DEFAULT_SEED) {
         seed = time(NULL);
     }
-    ctx->rng.seed(10);//seed
+    ctx->rng.seed(seed);//seed
 }
 
 void llama_sample_softmax(struct llama_context * ctx, llama_token_data_array * candidates) {
@@ -9449,7 +9449,7 @@ struct llama_context * llama_new_context_with_model(
     LLAMA_LOG_INFO("%s: freq_base  = %.1f\n",   __func__, cparams.rope_freq_base);
     LLAMA_LOG_INFO("%s: freq_scale = %g\n",     __func__, cparams.rope_freq_scale);
 
-    ctx->rng = std::mt19937(10);//params.seed
+    ctx->rng = std::mt19937(params.seed);//params.seed
     ctx->logits_all = params.logits_all;
 
     const ggml_type type_k = params.type_k;

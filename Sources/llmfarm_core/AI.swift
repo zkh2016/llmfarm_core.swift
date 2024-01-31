@@ -17,6 +17,55 @@ public enum ModelInference {
     case RWKV
 }
 
+class StreamReader {
+    let encoding: String.Encoding
+    let chunkSize: Int
+    let fileHandle: FileHandle
+    var buffer: Data
+    let delimPattern : Data
+    var isAtEOF: Bool = false
+    
+    init?(url: URL, delimeter: String = "\n", encoding: String.Encoding = .utf8, chunkSize: Int = 4096)
+    {
+        guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
+        self.fileHandle = fileHandle
+        self.chunkSize = chunkSize
+        self.encoding = encoding
+        buffer = Data(capacity: chunkSize)
+        delimPattern = delimeter.data(using: .utf8)!
+    }
+    
+    deinit {
+        fileHandle.closeFile()
+    }
+    
+    func rewind() {
+        fileHandle.seek(toFileOffset: 0)
+        buffer.removeAll(keepingCapacity: true)
+        isAtEOF = false
+    }
+    
+    func nextLine() -> String? {
+        if isAtEOF { return nil }
+        
+        repeat {
+            if let range = buffer.range(of: delimPattern, options: [], in: buffer.startIndex..<buffer.endIndex) {
+                let subData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
+                let line = String(data: subData, encoding: encoding)
+                buffer.replaceSubrange(buffer.startIndex..<range.upperBound, with: [])
+                return line
+            } else {
+                let tempData = fileHandle.readData(ofLength: chunkSize)
+                if tempData.count == 0 {
+                    isAtEOF = true
+                    return (buffer.count > 0) ? String(data: buffer, encoding: encoding) : nil
+                }
+                buffer.append(tempData)
+            }
+        } while true
+    }
+}
+
 public class AI {
     
     var aiQueue = DispatchQueue(label: "LLMFarm-Main", qos: .userInitiated, attributes: .concurrent, autoreleaseFrequency: .inherit, target: nil)
@@ -73,7 +122,6 @@ public class AI {
         aiQueue.async {
             guard let completion = completion else { return }
             
-            
             if self.model == nil{
                 DispatchQueue.main.async {
                     self.flagResponding = false
@@ -82,37 +130,45 @@ public class AI {
                 return
             }
             
-            // Model output
-            var output:String? = ""
-            do{
-                try ExceptionCather.catchException {
-                    output = try? self.model.predict(input, { str, time in
-                        if self.flagExit {
-                            // Reset flag
-                            self.flagExit = false
-                            // Alert model of exit flag
-                            return true
+            //let ipt_path = Bundle.main.resourcePath!.appending("/model_setting_templates/input.json")
+            //print(ipt_path)
+            //let file_url = URL(fileURLWithPath: ipt_path)
+            //let s = StreamReader(url: file_url)
+            //for _ in 1...1 {
+                //if let line = s?.nextLine() {
+                    //print(line)
+                    // Model output
+                    var output:String? = ""
+                    do{
+                        try ExceptionCather.catchException {
+                            output = try? self.model.predict(input, { str, time in
+                                if self.flagExit {
+                                    // Reset flag
+                                    self.flagExit = false
+                                    // Alert model of exit flag
+                                    return true
+                                }
+                                DispatchQueue.main.async {
+                                    tokenCallback?(str, time)
+                                }
+                                return false
+                            })
                         }
+                    }catch{
+                        print(error)
                         DispatchQueue.main.async {
-                            tokenCallback?(str, time)
+                            self.flagResponding = false
+                            completion("[Error] \(error)")
                         }
-                        return false
-                    })
-                }
-            }catch{
-                print(error)
-                DispatchQueue.main.async {
-                    self.flagResponding = false
-                    completion("[Error] \(error)")
+                    }
+                    DispatchQueue.main.async {
+                        self.flagResponding = false
+                        completion(output ?? "[Error]")
+                    }
                 }
             }
-            DispatchQueue.main.async {
-                self.flagResponding = false
-                completion(output ?? "[Error]")
-            }
-            
-        }
-    }
+        //}
+    //}
 }
 
 
