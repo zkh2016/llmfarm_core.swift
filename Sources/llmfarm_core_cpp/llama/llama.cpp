@@ -4372,6 +4372,7 @@ struct llm_build_context {
         struct ggml_tensor * cur;
         struct ggml_tensor * inpL;
         struct ggml_tensor * inpL_emb;
+        const int64_t n_embd_base = 256;
         
         inpL_emb = llm_build_inp_embd(ctx0, hparams, batch, model.tok_embd, cb);
         cb(inpL_emb, "inp_embd", -1);
@@ -4452,7 +4453,7 @@ struct llm_build_context {
                 cb(cur, "kqv_out", il);
             }
 
-            cur = ggml_scale(ctx0, cur, 1.4/sqrt(40.0));
+            cur = ggml_scale(ctx0, cur, 1.4/sqrt(hparams.n_layer));
             cb(cur, "hs_scale", il);
             
             struct ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
@@ -4537,7 +4538,7 @@ struct llm_build_context {
                 cur = moe_out;
             }
 
-            cur = ggml_scale(ctx0, cur, 1.4/sqrt(40.0));
+            cur = ggml_scale(ctx0, cur, 1.4/sqrt(hparams.n_layer));
             cb(cur, "hs_scale_2", il);
             cur = ggml_add(ctx0, cur, ffn_inp);
             cb(cur, "l_out", il);
@@ -4552,8 +4553,7 @@ struct llm_build_context {
                 model.output_norm, NULL,
                 LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
-
-        cur = ggml_scale(ctx0, cur, 1.0 / 9.0);
+        cur = ggml_scale(ctx0, cur, (float)n_embd_base/(float)n_embd);
         cb(cur, "div_scale", -1);
         // lm_head
         //cur = ggml_mul_mat(ctx0, model.output, cur);
